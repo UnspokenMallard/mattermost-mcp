@@ -1,7 +1,7 @@
 {
   "name": "mattermost-mcp",
-  "version": "0.1.0",
-  "description": "Read-only MCP server for Mattermost: list channels, read channels, threads and unread messages, search posts",
+  "version": "0.2.0",
+  "description": "Read-only MCP server for Mattermost (stdio or hosted Streamable HTTP): list channels, read channels, threads and unread messages, search posts",
   "private": true,
   "type": "module",
   "bin": {
@@ -10,7 +10,8 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "tsc && node --test dist/*.test.js"
+    "test": "tsc && node --test dist/*.test.js",
+    "start:http": "MCP_TRANSPORT=http node dist/index.js"
   },
   "engines": {
     "node": ">=18"
