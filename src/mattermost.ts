@@ -55,6 +55,7 @@ export class Mattermost {
   private teamList?: MmTeam[];
   private readonly usernames = new Map<string, string>();
   private channelCache?: { at: number; list: ChannelInfo[] };
+  private accepted = false;
 
   constructor(
     private readonly baseUrl: string,
@@ -94,7 +95,13 @@ export class Mattermost {
       }
       throw new Error(`Mattermost ${res.status} on ${method} ${path}: ${detail}`);
     }
+    this.accepted = true;
     return (await res.json()) as T;
+  }
+
+  /** True once Mattermost has accepted the token on at least one call. */
+  get verified(): boolean {
+    return this.accepted;
   }
 
   async currentUser(): Promise<MmUser> {

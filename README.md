@@ -84,6 +84,8 @@ not supported yet.
 | `MCP_TRANSPORT` | `stdio` (default) or `http`. |
 | `PORT` | HTTP mode only. Port to listen on (default `8787`). |
 | `HOST` | HTTP mode only. Address to bind (default `0.0.0.0`). |
+| `RATE_LIMIT_PER_MIN` | HTTP mode only. Requests per minute allowed from one IP on `/mcp` (default `120`). |
+| `TRUST_PROXY` | HTTP mode only. `true` takes the caller IP from the last `X-Forwarded-For` entry. Set it behind a reverse proxy you control, else every caller shares the proxy's IP and its limit. Leave it off when the server is reachable directly, since the header is then spoofable. |
 | `MATTERMOST_TOKEN` | stdio only. Token itself. Wins over the file. |
 | `MATTERMOST_TOKEN_FILE` | stdio only. File with the raw token or `{"token": "..."}`. `~/` is expanded. |
 

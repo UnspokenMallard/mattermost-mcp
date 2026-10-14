@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { after, test } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { ClientPool, startHttpServer } from "./http.js";
+import { ClientPool, RateLimiter, startHttpServer } from "./http.js";
 import { Mattermost, type FetchFn } from "./mattermost.js";
 
 const ME = "u".repeat(26);
@@ -101,14 +101,61 @@ test("a Mattermost failure is a tool error, not a dead request", async () => {
   await c.close();
 });
 
-test("ClientPool reuses a client per token, expires idle ones and caps its size", () => {
+test("ClientPool reuses a verified client per token, expires idle ones and caps its size", async () => {
   const made: string[] = [];
-  const pool = new ClientPool((t) => (made.push(t), new Mattermost("https://mm.test", t)), 1000, 2);
-  const a = pool.get("a", 0);
+  const pool = new ClientPool((t) => (made.push(t), new Mattermost("https://mm.test", t, fake.fetchFn)), 1000, 2);
+  async function use(token: string, now: number): Promise<Mattermost> {
+    const client = pool.get(token, now);
+    await client.currentUser();
+    pool.remember(token, client, now);
+    return client;
+  }
+  const a = await use("a", 0);
   assert.equal(pool.get("a", 500), a);
   assert.equal(made.length, 1);
   assert.notEqual(pool.get("a", 2000), a, "idle client expired");
-  pool.get("b", 2000);
-  pool.get("c", 2000);
+  await use("b", 2000);
+  await use("c", 2000);
   assert.equal(pool.size, 2);
+});
+
+test("ClientPool never stores a client Mattermost has not accepted", () => {
+  const pool = new ClientPool((t) => new Mattermost("https://mm.test", t, fake.fetchFn), 1000, 2);
+  for (let i = 0; i < 10; i++) pool.remember(`junk-${i}`, pool.get(`junk-${i}`));
+  assert.equal(pool.size, 0);
+});
+
+test("made-up tokens do not evict a real user's cached client", async () => {
+  const pool = new ClientPool((t) => new Mattermost("https://mm.test", t, fake.fetchFn), 1000, 2);
+  const real = pool.get("real");
+  await real.currentUser();
+  pool.remember("real", real);
+  for (let i = 0; i < 10; i++) pool.remember(`junk-${i}`, pool.get(`junk-${i}`));
+  assert.equal(pool.get("real"), real);
+});
+
+test("RateLimiter allows the limit per window, then reports the wait, per key", () => {
+  const limiter = new RateLimiter(2, 1000);
+  assert.equal(limiter.check("ip1", 0), 0);
+  assert.equal(limiter.check("ip1", 100), 0);
+  assert.equal(limiter.check("ip1", 200), 800);
+  assert.equal(limiter.check("ip2", 200), 0, "other IPs are not affected");
+  assert.equal(limiter.check("ip1", 1000), 0, "window reset");
+});
+
+test("POST /mcp over the per-IP limit is 429 with Retry-After; healthz is not limited", async () => {
+  const limited = await startHttpServer({ mattermostUrl: "https://mm.test", port: 0, host: "127.0.0.1", fetchFn: fake.fetchFn, rateLimitPerMin: 2 });
+  const url = `http://127.0.0.1:${(limited.address() as AddressInfo).port}`;
+  try {
+    const post = (): Promise<Response> => fetch(`${url}/mcp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    assert.equal((await post()).status, 401);
+    assert.equal((await post()).status, 401);
+    const res = await post();
+    assert.equal(res.status, 429);
+    assert.ok(Number(res.headers.get("retry-after")) >= 1);
+    assert.equal((await fetch(`${url}/healthz`)).status, 200);
+  } finally {
+    limited.closeAllConnections();
+    limited.close();
+  }
 });

@@ -11,7 +11,17 @@ async function main(): Promise<void> {
     if (!url) throw new Error("MATTERMOST_URL is not set");
     const port = Number(process.env.PORT ?? 8787);
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`Invalid PORT "${process.env.PORT}"`);
-    const server = await startHttpServer({ mattermostUrl: url, port, host: process.env.HOST?.trim() || "0.0.0.0" });
+    const rateLimitPerMin = process.env.RATE_LIMIT_PER_MIN ? Number(process.env.RATE_LIMIT_PER_MIN) : undefined;
+    if (rateLimitPerMin !== undefined && !(Number.isInteger(rateLimitPerMin) && rateLimitPerMin > 0)) {
+      throw new Error(`Invalid RATE_LIMIT_PER_MIN "${process.env.RATE_LIMIT_PER_MIN}"`);
+    }
+    const server = await startHttpServer({
+      mattermostUrl: url,
+      port,
+      host: process.env.HOST?.trim() || "0.0.0.0",
+      rateLimitPerMin,
+      trustProxy: process.env.TRUST_PROXY?.trim().toLowerCase() === "true",
+    });
     process.stderr.write(`mattermost MCP listening on :${port} (POST /mcp, GET /healthz) for ${url}\n`);
     const stop = (): void => {
       server.close(() => process.exit(0));
